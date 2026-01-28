@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
+const bcrypt = require('bcrypt');
 const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
@@ -17,7 +18,7 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
-// Gmail SMTP transporter with explicit settings (Port 465 + SSL for cloud compatibility)
+// Gmail SMTP transporter with explicit settings
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
@@ -159,6 +160,141 @@ app.post('/verify-otp', async (req, res) => {
         res.status(500).json({ success: false, message: 'Gagal memverifikasi OTP' });
     }
 });
+
+app.post('/register', async (req, res) => {
+    try {
+        const { email, phone_number, full_name, password, otp } = req.body;
+
+        if (!email || !phone_number || !full_name || !password || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Semua field wajib diisi (termasuk OTP)'
+            });
+        }
+
+        // 1. Verify OTP
+        const { data: otpData, error: fetchError } = await supabase
+            .from('otp_codes')
+            .select('*')
+            .eq('email', email)
+            .eq('code', otp)
+            .eq('used', false)
+            .gte('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (fetchError || !otpData) {
+            return res.status(400).json({
+                success: false,
+                message: 'Kode OTP tidak valid atau sudah kadaluarsa'
+            });
+        }
+
+        // 2. Hash password
+        const passwordHash = await bcrypt.hash(password, 12);
+
+        // 3. Create User
+        const { error: userError } = await supabase
+            .from('users')
+            .insert({
+                email,
+                phone_number,
+                full_name,
+                password_hash: passwordHash,
+                is_verified: true
+            });
+
+        if (userError) {
+            // Check for duplicate key error (email or phone)
+            if (userError.code === '23505') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email atau Nomor HP sudah terdaftar'
+                });
+            }
+            throw userError;
+        }
+
+        // 4. Mark OTP as used
+        await supabase
+            .from('otp_codes')
+            .update({ used: true })
+            .eq('id', otpData.id);
+
+        res.json({
+            success: true,
+            message: 'Registrasi berhasil'
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal registrasi: ' + err.message
+        });
+    }
+});
+
+app.post('/login', async (req, res) => {
+    try {
+        const { identifier, password } = req.body;
+
+        if (!identifier || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Identifier dan password wajib diisi'
+            });
+        }
+
+        // cari user by email atau phone
+        const { data: user, error } = await supabase
+            .from('users')
+            .select('*')
+            .or(`email.eq.${identifier},phone_number.eq.${identifier}`)
+            .eq('is_verified', true)
+            .single();
+
+        if (error || !user) {
+            return res.status(401).json({
+                success: false,
+                message: 'User tidak ditemukan'
+            });
+        }
+
+        // compare password
+        const isValid = await bcrypt.compare(
+            password,
+            user.password_hash
+        );
+
+        if (!isValid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Password salah'
+            });
+        }
+
+        // TODO: generate JWT
+        res.json({
+            success: true,
+            message: 'Login berhasil',
+            user: {
+                id: user.id,
+                full_name: user.full_name,
+                role: user.user_role
+            }
+        });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal login'
+        });
+    }
+});
+
 
 // Start server
 app.listen(PORT, () => {
