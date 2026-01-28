@@ -17,13 +17,21 @@ const supabase = createClient(
     process.env.SUPABASE_KEY
 );
 
-// Gmail SMTP transporter
+// Gmail SMTP transporter with explicit settings
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true for 465, false for 587
     auth: {
         user: process.env.GMAIL_USER,
         pass: process.env.GMAIL_APP_PASSWORD
-    }
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000,
+    socketTimeout: 15000
 });
 
 // Generate 6-digit OTP
