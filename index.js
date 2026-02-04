@@ -458,6 +458,89 @@ app.post('/change-password', async (req, res) => {
     }
 });
 
+app.post('/change-profile', async (req, res) => {
+    try {
+        const { userId, fullName, phoneNumber } = req.body;
+
+        if (!userId || !fullName || !phoneNumber) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({
+                'full_name': fullName,
+                'phone_number': phoneNumber,
+            })
+            .eq('id', userId);
+        
+        if (updateError) {
+            throw updateError;
+        }
+
+        res.json({
+            success: true,
+            message: 'Profil berhasil diubah'
+        });
+    } catch (err) {
+        console.error('Error change profile:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengubah profil: ' + err.message,
+        })
+    }
+});
+
+app.post('/change-location', async (req, res) => {
+    try {
+        const { userId, latitude, longitude, isWorking } = req.body;
+
+        if (!userId || !latitude || !longitude) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        console.log(isWorking);
+        if (isWorking !== null) {
+            const { error: updateError } = await supabase
+                .from('users')
+                .update({
+                    'is_working': isWorking,
+                    'latitude': latitude,
+                    'longitude': longitude,
+                })
+                .eq('id', userId);
+            
+            if (updateError) {
+                throw updateError;
+            }
+        } else {
+            const { error: updateError } = await supabase
+            .from('users')
+                .update({
+                    'latitude': latitude,
+                    'longitude': longitude,
+                })
+                .eq('id', userId);
+            
+            if (updateError) {
+                throw updateError;
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Lokasi berhasil diubah'
+        });
+    } catch (err) {
+        console.error('Error change location:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengubah lokasi: ' + err.message,
+        })
+    }
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 OTP Server running on port ${PORT}`);
