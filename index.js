@@ -300,7 +300,7 @@ app.post('/login', async (req, res) => {
 // Admin: Update User Profile
 app.post('/admin/update-user', async (req, res) => {
     try {
-        const { userId, full_name, phone_number } = req.body;
+        const { userId, full_name, phone_number, daily_rate } = req.body;
 
         if (!userId) {
             return res.status(400).json({ success: false, message: 'User ID diperlukan' });
@@ -309,6 +309,7 @@ app.post('/admin/update-user', async (req, res) => {
         const updateData = {};
         if (full_name) updateData.full_name = full_name;
         if (phone_number) updateData.phone_number = phone_number;
+        if (daily_rate !== undefined) updateData.daily_rate = daily_rate;
 
         const { data, error } = await supabase
             .from('users')
