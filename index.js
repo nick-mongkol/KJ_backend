@@ -163,9 +163,9 @@ app.post('/verify-otp', async (req, res) => {
 
 app.post('/register', async (req, res) => {
     try {
-        const { email, phone_number, full_name, password, otp } = req.body;
+        const { email, phone_number, full_name, password, otp, role } = req.body;
 
-        if (!email || !phone_number || !full_name || !password || !otp) {
+        if (!email || !phone_number || !full_name || !password || !otp || !role) {
             return res.status(400).json({
                 success: false,
                 message: 'Semua field wajib diisi (termasuk OTP)'
@@ -202,7 +202,8 @@ app.post('/register', async (req, res) => {
                 phone_number,
                 full_name,
                 password_hash: passwordHash,
-                is_verified: true
+                is_verified: true,
+                user_role: [role],
             });
 
         if (userError) {
