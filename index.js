@@ -297,6 +297,167 @@ app.post('/login', async (req, res) => {
 });
 
 
+// Admin: Update User Profile
+app.post('/admin/update-user', async (req, res) => {
+    try {
+        const { userId, full_name, phone_number } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID diperlukan' });
+        }
+
+        const updateData = {};
+        if (full_name) updateData.full_name = full_name;
+        if (phone_number) updateData.phone_number = phone_number;
+
+        const { data, error } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', userId)
+            .select()
+            .single();
+
+        if (error) {
+            throw error;
+        }
+
+        res.json({
+            success: true,
+            message: 'Profil berhasil diperbarui',
+            data
+        });
+
+    } catch (err) {
+        console.error('Error update user:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal memperbarui profil: ' + err.message
+        });
+    }
+});
+
+// Admin: Reset Password
+app.post('/admin/reset-password', async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID diperlukan' });
+        }
+
+        // Hash default password '12345678'
+        const passwordHash = await bcrypt.hash('12345678', 12);
+
+        const { data, error } = await supabase
+            .from('users')
+            .update({ password_hash: passwordHash })
+            .eq('id', userId)
+            .select()
+            .single();
+
+        if (error) {
+            throw error;
+        }
+
+        res.json({
+            success: true,
+            message: 'Password berhasil direset ke 12345678'
+        });
+
+    } catch (err) {
+        console.error('Error reset password:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal reset password: ' + err.message
+        });
+    }
+});
+
+// Admin: Delete User
+app.post('/admin/delete-user', async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, message: 'User ID diperlukan' });
+        }
+
+        const { error } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', userId);
+
+        if (error) {
+            throw error;
+        }
+
+        res.json({
+            success: true,
+            message: 'User berhasil dihapus'
+        });
+
+    } catch (err) {
+        console.error('Error delete user:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal menghapus user: ' + err.message
+        });
+    }
+});
+
+// User: Change Password
+app.post('/change-password', async (req, res) => {
+    try {
+        const { userId, oldPassword, newPassword } = req.body;
+
+        if (!userId || !oldPassword || !newPassword) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        // 1. Get user to verify old password
+        const { data: user, error: fetchError } = await supabase
+            .from('users')
+            .select('password_hash')
+            .eq('id', userId)
+            .single();
+
+        if (fetchError || !user) {
+            return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
+        }
+
+        // 2. Verify Old Password
+        const match = await bcrypt.compare(oldPassword, user.password_hash);
+        if (!match) {
+            return res.status(400).json({ success: false, message: 'Password lama salah' });
+        }
+
+        // 3. Hash New Password
+        const newPasswordHash = await bcrypt.hash(newPassword, 12);
+
+        // 4. Update Password
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({ password_hash: newPasswordHash })
+            .eq('id', userId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        res.json({
+            success: true,
+            message: 'Password berhasil diubah'
+        });
+
+    } catch (err) {
+        console.error('Error change password:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengubah password: ' + err.message
+        });
+    }
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 OTP Server running on port ${PORT}`);
