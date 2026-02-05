@@ -467,7 +467,7 @@ app.post('/change-profile', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
         }
 
-        
+
         const { error: updateError } = await supabase
             .from('users')
             .update({
@@ -475,7 +475,7 @@ app.post('/change-profile', async (req, res) => {
                 'phone_number': phoneNumber,
             })
             .eq('id', userId);
-        
+
         if (updateError) {
             throw updateError;
         }
@@ -511,19 +511,19 @@ app.post('/change-location', async (req, res) => {
                     'longitude': longitude,
                 })
                 .eq('id', userId);
-            
+
             if (updateError) {
                 throw updateError;
             }
         } else {
             const { error: updateError } = await supabase
-            .from('users')
+                .from('users')
                 .update({
                     'latitude': latitude,
                     'longitude': longitude,
                 })
                 .eq('id', userId);
-            
+
             if (updateError) {
                 throw updateError;
             }
@@ -538,6 +538,142 @@ app.post('/change-location', async (req, res) => {
         res.status(500).json({
             success: false,
             message: 'Gagal mengubah lokasi: ' + err.message,
+        })
+    }
+});
+
+// Worker: Add Skill
+app.post('/worker/add-skill', async (req, res) => {
+    try {
+        const { userId, skillName, certificateUrl } = req.body;
+
+        if (!userId || !skillName || !certificateUrl) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        // 1. Ensure worker_info exists
+        const { data: workerInfo, error: infoError } = await supabase
+            .from('worker_info')
+            .select('id')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+        if (infoError) throw infoError;
+
+        let workerId;
+        if (!workerInfo) {
+            const { data: newWorker, error: createError } = await supabase
+                .from('worker_info')
+                .insert({ user_id: userId })
+                .select()
+                .single();
+            if (createError) throw createError;
+            workerId = newWorker.id;
+        } else {
+            workerId = workerInfo.id;
+        }
+
+        // 2. Insert Skill
+        const { error: skillError } = await supabase
+            .from('worker_skills')
+            .insert({
+                worker_id: workerId,
+                skill_name: skillName,
+                certificate_url: certificateUrl,
+                verification_status: 'pending'
+            });
+
+        if (skillError) throw skillError;
+
+        res.json({
+            success: true,
+            message: 'Keahlian berhasil ditambahkan dan menunggu verifikasi'
+        });
+
+    } catch (err) {
+        console.error('Error add skill:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal menambahkan keahlian: ' + err.message,
+        })
+    }
+});
+
+// Admin: Verify Skill
+app.post('/admin/verify-skill', async (req, res) => {
+    try {
+        const { skillId, status } = req.body;
+
+        if (!skillId || !['verified', 'rejected', 'pending'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Data invalid' });
+        }
+
+        const { error } = await supabase
+            .from('worker_skills')
+            .update({ verification_status: status })
+            .eq('id', skillId);
+
+        if (error) throw error;
+
+        res.json({
+            success: true,
+            message: `Status keahlian diubah menjadi ${status}`
+        });
+
+    } catch (err) {
+        console.error('Error verify skill:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal verifikasi: ' + err.message,
+        })
+    }
+});
+
+// Worker: Initial Verification (KTP + First Skill)
+app.post('/worker/submit-initial', async (req, res) => {
+    try {
+        const { userId, ktpUrl, address, skillName, certificateUrl } = req.body;
+
+        if (!userId || !ktpUrl || !address || !skillName || !certificateUrl) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        // 1. Upsert worker_info (Update Account Status & KTP)
+        const { data: workerInfo, error: infoError } = await supabase
+            .from('worker_info')
+            .upsert({
+                user_id: userId,
+                address: address,
+                ktp_url: ktpUrl,
+                account_status: 'pending' // Set directly to pending
+            }, { onConflict: 'user_id' })
+            .select()
+            .single();
+
+        if (infoError) throw infoError;
+
+        // 2. Insert First Skill
+        const { error: skillError } = await supabase
+            .from('worker_skills')
+            .insert({
+                worker_id: workerInfo.id,
+                skill_name: skillName,
+                certificate_url: certificateUrl,
+                verification_status: 'pending'
+            });
+
+        if (skillError) throw skillError;
+
+        res.json({
+            success: true,
+            message: 'Verifikasi berhasil dikirim. Mohon tunggu persetujuan admin.'
+        });
+
+    } catch (err) {
+        console.error('Error submit initial:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mengirim data: ' + err.message,
         })
     }
 });
