@@ -678,6 +678,49 @@ app.post('/worker/submit-initial', async (req, res) => {
     }
 });
 
+// Admin: Verify Account (Unified - Account + All Pending Skills)
+app.post('/admin/verify-account', async (req, res) => {
+    try {
+        const { userId, status } = req.body;
+
+        if (!userId || !['verified', 'rejected'].includes(status)) {
+            return res.status(400).json({ success: false, message: 'Data invalid' });
+        }
+
+        // 1. Update Worker Info
+        const { data: workerInfo, error: infoError } = await supabase
+            .from('worker_info')
+            .update({ account_status: status })
+            .eq('user_id', userId)
+            .select()
+            .single();
+
+        if (infoError) throw infoError;
+
+        // 2. Update ALL Pending Skills for this worker
+        // This fulfills the "One Click" requirement
+        const { error: skillError } = await supabase
+            .from('worker_skills')
+            .update({ verification_status: status })
+            .eq('worker_id', workerInfo.id)
+            .eq('verification_status', 'pending'); // Only update pending ones
+
+        if (skillError) throw skillError;
+
+        res.json({
+            success: true,
+            message: `Akun dan keahlian berhasil di-${status}`
+        });
+
+    } catch (err) {
+        console.error('Error verify account:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal verifikasi: ' + err.message,
+        })
+    }
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 OTP Server running on port ${PORT}`);
