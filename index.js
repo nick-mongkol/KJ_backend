@@ -502,31 +502,45 @@ app.post('/change-location', async (req, res) => {
         }
 
         console.log(isWorking);
-        if (isWorking !== null) {
-            const { error: updateError } = await supabase
-                .from('users')
-                .update({
-                    'is_working': isWorking,
-                    'latitude': latitude,
-                    'longitude': longitude,
-                })
-                .eq('id', userId);
 
-            if (updateError) {
-                throw updateError;
-            }
-        } else {
-            const { error: updateError } = await supabase
-                .from('users')
-                .update({
-                    'latitude': latitude,
-                    'longitude': longitude,
-                })
-                .eq('id', userId);
+        // Update location in users table
+        const updateData = {
+            'latitude': latitude,
+            'longitude': longitude,
+        };
 
-            if (updateError) {
-                throw updateError;
-            }
+        if (isWorking !== null && isWorking !== undefined) {
+            updateData['is_working'] = isWorking;
+        }
+
+        const { error: updateError } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', userId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        // Also update worker_info table (location + is_working)
+        // This saves the last known location for the worker
+        const workerInfoUpdate = {
+            'latitude': latitude,
+            'longitude': longitude,
+        };
+
+        if (isWorking !== null && isWorking !== undefined) {
+            workerInfoUpdate['is_working'] = isWorking;
+        }
+
+        const { error: workerInfoError } = await supabase
+            .from('worker_info')
+            .update(workerInfoUpdate)
+            .eq('user_id', userId);
+
+        if (workerInfoError) {
+            console.log('Worker info update error (may not exist):', workerInfoError);
+            // Don't throw - worker_info might not exist for this user (e.g., customers)
         }
 
         res.json({
