@@ -21,8 +21,8 @@ const supabase = createClient(
 // Gmail SMTP transporter with explicit settings
 const transporter = nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 465,
-    secure: true, // SSL for port 465
+    port: 587,
+    secure: false, // Use STARTTLS for port 587
     auth: {
         user: process.env.GMAIL_USER,
         pass: process.env.GMAIL_APP_PASSWORD
@@ -283,7 +283,8 @@ app.post('/login', async (req, res) => {
             user: {
                 id: user.id,
                 full_name: user.full_name,
-                role: user.user_role
+                role: user.user_role,
+                profile_picture_url: user.profile_picture_url
             }
         });
 
@@ -306,26 +307,36 @@ app.post('/admin/update-user', async (req, res) => {
             return res.status(400).json({ success: false, message: 'User ID diperlukan' });
         }
 
-        const updateData = {};
-        if (full_name) updateData.full_name = full_name;
-        if (phone_number) updateData.phone_number = phone_number;
-        if (daily_rate !== undefined) updateData.daily_rate = daily_rate;
+        // 1. Update Users table (name, phone)
+        const userUpdateData = {};
+        if (full_name) userUpdateData.full_name = full_name;
+        if (phone_number) userUpdateData.phone_number = phone_number;
 
-        const { data, error } = await supabase
-            .from('users')
-            .update(updateData)
-            .eq('id', userId)
-            .select()
-            .single();
+        if (Object.keys(userUpdateData).length > 0) {
+            const { error: userError } = await supabase
+                .from('users')
+                .update(userUpdateData)
+                .eq('id', userId);
 
-        if (error) {
-            throw error;
+            if (userError) throw userError;
+        }
+
+        // 2. Update Worker Info table (daily_rate)
+        if (daily_rate !== undefined) {
+            const { error: workerError } = await supabase
+                .from('worker_info')
+                .update({ daily_rate: daily_rate })
+                .eq('user_id', userId);
+
+            // If it fails, maybe it's because worker_info doesn't exist yet for this user
+            if (workerError) {
+                console.log('Worker info update skipped or failed:', workerError.message);
+            }
         }
 
         res.json({
             success: true,
-            message: 'Profil berhasil diperbarui',
-            data
+            message: 'Profil berhasil diperbarui'
         });
 
     } catch (err) {
@@ -459,6 +470,101 @@ app.post('/change-password', async (req, res) => {
     }
 });
 
+// Forgot Password Flow
+app.post('/forgot-password', async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email, OTP, dan password baru wajib diisi'
+            });
+        }
+
+        // 1. Verify OTP
+        const { data: otpData, error: fetchError } = await supabase
+            .from('otp_codes')
+            .select('*')
+            .eq('email', email)
+            .eq('code', otp)
+            .eq('used', false)
+            .gte('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (fetchError || !otpData) {
+            return res.status(400).json({
+                success: false,
+                message: 'Kode OTP tidak valid atau sudah kadaluarsa'
+            });
+        }
+
+        // 2. Hash New Password
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+
+        // 3. Update User Password in Supabase
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({ password_hash: passwordHash })
+            .eq('email', email);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        // 4. Mark OTP as used
+        await supabase
+            .from('otp_codes')
+            .update({ used: true })
+            .eq('id', otpData.id);
+
+        res.json({
+            success: true,
+            message: 'Password Anda telah berhasil direset'
+        });
+
+    } catch (err) {
+        console.error('Error forgot password:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mereset password: ' + err.message
+        });
+    }
+});
+
+// User: Change Profile Picture
+app.post('/change-profile-picture', async (req, res) => {
+    try {
+        const { userId, profilePictureUrl } = req.body;
+
+        if (!userId || !profilePictureUrl) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({ 'profile_picture_url': profilePictureUrl })
+            .eq('id', userId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        res.json({
+            success: true,
+            message: 'Foto profil berhasil diperbarui'
+        });
+    } catch (err) {
+        console.error('Error change profile picture:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal memperbarui foto profil: ' + err.message,
+        })
+    }
+});
+
 app.post('/change-profile', async (req, res) => {
     try {
         const { userId, fullName, phoneNumber } = req.body;
@@ -502,31 +608,45 @@ app.post('/change-location', async (req, res) => {
         }
 
         console.log(isWorking);
-        if (isWorking !== null) {
-            const { error: updateError } = await supabase
-                .from('users')
-                .update({
-                    'is_working': isWorking,
-                    'latitude': latitude,
-                    'longitude': longitude,
-                })
-                .eq('id', userId);
 
-            if (updateError) {
-                throw updateError;
-            }
-        } else {
-            const { error: updateError } = await supabase
-                .from('users')
-                .update({
-                    'latitude': latitude,
-                    'longitude': longitude,
-                })
-                .eq('id', userId);
+        // Update location in users table
+        const updateData = {
+            'latitude': latitude,
+            'longitude': longitude,
+        };
 
-            if (updateError) {
-                throw updateError;
-            }
+        if (isWorking !== null && isWorking !== undefined) {
+            updateData['is_working'] = isWorking;
+        }
+
+        const { error: updateError } = await supabase
+            .from('users')
+            .update(updateData)
+            .eq('id', userId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        // Also update worker_info table (location + is_working)
+        // This saves the last known location for the worker
+        const workerInfoUpdate = {
+            'latitude': latitude,
+            'longitude': longitude,
+        };
+
+        if (isWorking !== null && isWorking !== undefined) {
+            workerInfoUpdate['is_working'] = isWorking;
+        }
+
+        const { error: workerInfoError } = await supabase
+            .from('worker_info')
+            .update(workerInfoUpdate)
+            .eq('user_id', userId);
+
+        if (workerInfoError) {
+            console.log('Worker info update error (may not exist):', workerInfoError);
+            // Don't throw - worker_info might not exist for this user (e.g., customers)
         }
 
         res.json({
