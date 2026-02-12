@@ -307,26 +307,36 @@ app.post('/admin/update-user', async (req, res) => {
             return res.status(400).json({ success: false, message: 'User ID diperlukan' });
         }
 
-        const updateData = {};
-        if (full_name) updateData.full_name = full_name;
-        if (phone_number) updateData.phone_number = phone_number;
-        if (daily_rate !== undefined) updateData.daily_rate = daily_rate;
+        // 1. Update Users table (name, phone)
+        const userUpdateData = {};
+        if (full_name) userUpdateData.full_name = full_name;
+        if (phone_number) userUpdateData.phone_number = phone_number;
 
-        const { data, error } = await supabase
-            .from('users')
-            .update(updateData)
-            .eq('id', userId)
-            .select()
-            .single();
+        if (Object.keys(userUpdateData).length > 0) {
+            const { error: userError } = await supabase
+                .from('users')
+                .update(userUpdateData)
+                .eq('id', userId);
 
-        if (error) {
-            throw error;
+            if (userError) throw userError;
+        }
+
+        // 2. Update Worker Info table (daily_rate)
+        if (daily_rate !== undefined) {
+            const { error: workerError } = await supabase
+                .from('worker_info')
+                .update({ daily_rate: daily_rate })
+                .eq('user_id', userId);
+
+            // If it fails, maybe it's because worker_info doesn't exist yet for this user
+            if (workerError) {
+                console.log('Worker info update skipped or failed:', workerError.message);
+            }
         }
 
         res.json({
             success: true,
-            message: 'Profil berhasil diperbarui',
-            data
+            message: 'Profil berhasil diperbarui'
         });
 
     } catch (err) {
