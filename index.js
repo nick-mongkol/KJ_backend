@@ -283,7 +283,8 @@ app.post('/login', async (req, res) => {
             user: {
                 id: user.id,
                 full_name: user.full_name,
-                role: user.user_role
+                role: user.user_role,
+                profile_picture_url: user.profile_picture_url
             }
         });
 
@@ -520,6 +521,37 @@ app.post('/forgot-password', async (req, res) => {
             success: false,
             message: 'Gagal mereset password: ' + err.message
         });
+    }
+});
+
+// User: Change Profile Picture
+app.post('/change-profile-picture', async (req, res) => {
+    try {
+        const { userId, profilePictureUrl } = req.body;
+
+        if (!userId || !profilePictureUrl) {
+            return res.status(400).json({ success: false, message: 'Data tidak lengkap' });
+        }
+
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({ 'profile_picture_url': profilePictureUrl })
+            .eq('id', userId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        res.json({
+            success: true,
+            message: 'Foto profil berhasil diperbarui'
+        });
+    } catch (err) {
+        console.error('Error change profile picture:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal memperbarui foto profil: ' + err.message,
+        })
     }
 });
 
