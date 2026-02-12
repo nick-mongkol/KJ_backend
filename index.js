@@ -459,6 +459,70 @@ app.post('/change-password', async (req, res) => {
     }
 });
 
+// Forgot Password Flow
+app.post('/forgot-password', async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email, OTP, dan password baru wajib diisi'
+            });
+        }
+
+        // 1. Verify OTP
+        const { data: otpData, error: fetchError } = await supabase
+            .from('otp_codes')
+            .select('*')
+            .eq('email', email)
+            .eq('code', otp)
+            .eq('used', false)
+            .gte('expires_at', new Date().toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+        if (fetchError || !otpData) {
+            return res.status(400).json({
+                success: false,
+                message: 'Kode OTP tidak valid atau sudah kadaluarsa'
+            });
+        }
+
+        // 2. Hash New Password
+        const passwordHash = await bcrypt.hash(newPassword, 12);
+
+        // 3. Update User Password in Supabase
+        const { error: updateError } = await supabase
+            .from('users')
+            .update({ password_hash: passwordHash })
+            .eq('email', email);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        // 4. Mark OTP as used
+        await supabase
+            .from('otp_codes')
+            .update({ used: true })
+            .eq('id', otpData.id);
+
+        res.json({
+            success: true,
+            message: 'Password Anda telah berhasil direset'
+        });
+
+    } catch (err) {
+        console.error('Error forgot password:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Gagal mereset password: ' + err.message
+        });
+    }
+});
+
 app.post('/change-profile', async (req, res) => {
     try {
         const { userId, fullName, phoneNumber } = req.body;
