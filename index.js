@@ -85,12 +85,12 @@ app.post('/send-otp', async (req, res) => {
 
         // Send email
         const mailOptions = {
-            from: `"Aplikasi Tukang PUPR" <${process.env.GMAIL_USER}>`,
+            from: `"Tim Aplikasi Kang Jati" <${process.env.GMAIL_USER}>`,
             to: email,
-            subject: 'Kode OTP Anda - Aplikasi Tukang PUPR Jogja',
+            subject: 'Kode OTP Anda - Aplikasi Kang Jati',
             html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #1976D2;">Aplikasi Tukang PUPR Jogja</h2>
+          <h2 style="color: #1976D2;">Aplikasi Kang Jati</h2>
           <p>Berikut adalah kode OTP Anda:</p>
           <div style="background-color: #f5f5f5; padding: 20px; text-align: center; border-radius: 8px;">
             <h1 style="font-size: 36px; letter-spacing: 8px; color: #333; margin: 0;">${otp}</h1>
